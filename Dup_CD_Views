@@ -1,0 +1,112 @@
+#region Namespaces
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using Autodesk.Revit.ApplicationServices;
+using Autodesk.Revit.Attributes;
+using Autodesk.Revit.DB;
+using Autodesk.Revit.UI;
+using Autodesk.Revit.UI.Selection;
+#endregion
+
+namespace Dup_CD_Views
+{
+    [Transaction(TransactionMode.Manual)]
+    public class Command : IExternalCommand
+    {
+        public Result Execute(
+          ExternalCommandData commandData,
+          ref string message,
+          ElementSet elements)
+        {
+            UIApplication uiapp = commandData.Application;
+            UIDocument uidoc = uiapp.ActiveUIDocument;
+            Application app = uiapp.Application;
+            Document doc = uidoc.Document;
+
+            // Access current selection
+
+            Selection sel = uidoc.Selection;
+
+            // Retrieve elements from database
+
+            FilteredElementCollector col
+              = new FilteredElementCollector(doc)
+                .WhereElementIsNotElementType()
+                .OfCategory(BuiltInCategory.INVALID)
+                .OfClass(typeof(Wall));
+
+            //filters all scope boxes as instances
+            ICollection<Element> elem = new FilteredElementCollector(doc)
+                .OfCategory(BuiltInCategory.OST_VolumeOfInterest)
+                .WhereElementIsNotElementType().ToElements();
+
+            //define the numbered list name
+            List<bool> Num_Scope_Box = new List<bool>();
+
+            //get a count of area scope boxes - not including the overall scope box	
+            foreach (Element e in elem)
+            {
+                if (e.Name != ("SI_Building Extents"))
+                {
+                    Num_Scope_Box.Add(true);
+                    Console.WriteLine(Num_Scope_Box.Count);
+                }
+                continue;
+
+            }
+            //Defines the number of scope boxes as a variable
+            var SB_Int = Num_Scope_Box.Count;
+            //Converts scope boxes to an integer
+            int SB = SB_Int;
+            //warns user that this tool runs only on projects with a scope box
+            if (SB < 1)
+            {
+                TaskDialog.Show("Duplicate Views Error", "Please create scope boxes first");
+            }
+
+            //collects all the views in the project
+            FilteredElementCollector ViewCDColl
+               = new FilteredElementCollector(doc)
+               .OfClass(typeof(View));
+            //creates a list for views to duplicate
+            IList<View> vFP = new List<View>();
+            //adds only floor plans containing CD to the list
+            foreach (View v in ViewCDColl)
+            {
+                if (v.Name.Contains("CD"))
+                {
+                    if (v.ViewType == (ViewType.FloorPlan))
+                        vFP.Add(v);
+                    continue;
+                }
+            }
+
+            using (Transaction t = new Transaction(doc, "Duplicate Views"))
+            {
+                foreach (View x in vFP)
+                {
+                    t.Start();
+                    //sets the count of views to duplicate to start, 0 is used since the transaction will roll +1 to begin
+                    int i = 0;
+                    //allows the transaction to run untill the count is up to the number of scope boxes
+                    while (i < SB_Int)
+                    {
+                        View DupView = doc.GetElement(x.Duplicate(ViewDuplicateOption.AsDependent)) as View;
+                        //sets the charicter to append to the area (65 being the charicter before "A")
+                        char c = (char)(i + 65);
+                        //Appends "Area + the charicter" to the name of the view
+                        DupView.Name = x.Name + " - AREA " + c.ToString();
+                        //rolls to the next duplication
+                        i++;
+                    }
+
+                    t.Commit();
+                }
+
+                return Result.Succeeded;
+            }
+        }
+    }
+}
+
